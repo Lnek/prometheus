@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 	"net"
 	"os"
 	"strconv"
@@ -123,13 +124,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		instances = instancesFromDiscribeInstances
 
 		instancesFromCacheReCheck := d.getCacheReCheckInstances()
-		level.Info(d.logger).Log("msg", "Found Instances from cache re-check during ECS discovery.", "count", len(instancesFromCacheReCheck))
+		level.Debug(d.logger).Log("msg", "Found Instances from cache re-check during ECS discovery.", "count", len(instancesFromCacheReCheck))
 		instances = mergeHashInstances(instances, instancesFromCacheReCheck)
 	}
 
 	// build instances list.
 
-	level.Info(d.logger).Log("msg", "Found Instances from remote during ECS discovery.", "count", len(instances))
+	level.Debug(d.logger).Log("msg", "Found Instances from remote during ECS discovery.", "count", len(instances))
 
 	tg := &targetgroup.Group{
 		Source: getConfigRegionId(d.ecsCfg.RegionId),
@@ -193,15 +194,19 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 		// tags
 		for _, tag := range instance.Tags.Tag {
-			labels[ecsLabelTag+model.LabelName(tag.TagKey)] = model.LabelValue(tag.TagValue)
+			if &tag == nil || &tag.TagKey == nil || &tag.TagValue == nil {
+				continue
+			}
+			name := strutil.SanitizeLabelName(tag.TagKey)
+			labels[ecsLabelTag+model.LabelName(name)] = model.LabelValue(tag.TagValue)
 		}
 
 		tg.Targets = append(tg.Targets, labels)
 	}
 
-	level.Info(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(tg.Targets))
+	level.Debug(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(tg.Targets))
 	if noIpAddressInstanceCount > 0 {
-		level.Info(d.logger).Log("msg", "Found no AddressLabel instances during ECS discovery.", "count", noIpAddressInstanceCount)
+		level.Debug(d.logger).Log("msg", "Found no AddressLabel instances during ECS discovery.", "count", noIpAddressInstanceCount)
 	}
 
 	// cache targetGroup
@@ -320,7 +325,7 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 	if currentTotalCount < currentLimit {
 
 		for pageIndex := 2; currentTotalCount < currentLimit; pageIndex++ {
-			fmt.Println(fmt.Sprintf("pageIndex: %v", pageIndex))
+			level.Debug(d.logger).Log(fmt.Sprintf("pageIndex: %v", pageIndex))
 			if (currentLimit - currentTotalCount) < MAX_PAGE_LIMIT {
 				pageLimit = currentLimit - currentTotalCount
 			}
@@ -331,8 +336,7 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 				return nil, errors.Wrap(responseErr, "could not get ecs describeInstances response.")
 			}
 
-			fmt.Println(fmt.Sprintf("responsed pageIndex: %v", pageIndex))
-
+			level.Debug(d.logger).Log(fmt.Sprintf("responsed pageIndex: %v", pageIndex))
 			level.Debug(d.logger).Log("msg", "getResponse from describeInstancesResponse.", "requestId: ", describeInstancesRequest, "describeInstancesResponse: ", describeInstancesResponse, "pageNum: ", pageIndex)
 
 			newInstanceIndex := 0
