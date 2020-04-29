@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"os"
+	"strconv"
+	"time"
+
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/denverdino/aliyungo/metadata"
 	"github.com/go-kit/kit/log"
@@ -13,10 +18,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-	"net"
-	"os"
-	"strconv"
-	"time"
 
 	ecs_pop "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
 )
@@ -67,7 +68,7 @@ type SDConfig struct {
 
 // Filter is the configuration tags for filtering ECS instances.
 type TagFilter struct {
-	Key   string `yaml:"key"`
+	Key    string   `yaml:"key"`
 	Values []string `yaml:"values"`
 }
 
@@ -87,10 +88,10 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 		logger = log.NewNopLogger()
 	}
 	d := &Discovery{
-		ecsCfg: cfg,
-		port:   cfg.Port,
-		limit:  cfg.Limit,
-		logger: logger,
+		ecsCfg:  cfg,
+		port:    cfg.Port,
+		limit:   cfg.Limit,
+		logger:  logger,
 		tgCache: &targetgroup.Group{},
 	}
 	d.Discovery = refresh.NewDiscovery(
@@ -188,7 +189,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 		if !isAddressLabelExist {
 			level.Debug(d.logger).Log("msg", "Instance dont have AddressLabel.", "instance: ", fmt.Sprintf("%v", instance))
-			noIpAddressInstanceCount ++
+			noIpAddressInstanceCount++
 			continue
 		}
 
@@ -215,7 +216,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{tg}, nil
 }
 
-
 func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanceIdsStr string, nextToken string, err error) {
 
 	listTagResourcesRequest := ecs_pop.CreateListTagResourcesRequest()
@@ -224,7 +224,7 @@ func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanc
 
 	// FIRST token is empty, and continue
 	if token != "FIRST" {
-		if token != "" && token != "ICM="  {
+		if token != "" && token != "ICM=" {
 			listTagResourcesRequest.NextToken = token
 		} else {
 			return "[]", "", nil
@@ -238,7 +238,7 @@ func (d *Discovery) filterInstancesIdFromListTagResources(token string) (instanc
 			return "[]", "", errors.New("ECS SD configuration filter values cannot be empty.")
 		}
 		tagFilter := ecs_pop.ListTagResourcesTagFilter{
-			TagKey: tagFilter.Key,
+			TagKey:    tagFilter.Key,
 			TagValues: &tagFilter.Values,
 		}
 		tagsFilters = append(tagsFilters, tagFilter)
@@ -341,8 +341,8 @@ func (d *Discovery) queryFromDescribeInstances() (instances []ecs_pop.Instance, 
 
 			newInstanceIndex := 0
 			for instanceIndex, instance := range describeInstancesResponse.Instances.Instance {
-				if instanceIndex < pageLimit  {
-					newInstanceIndex ++
+				if instanceIndex < pageLimit {
+					newInstanceIndex++
 					instances = append(instances, instance)
 				} else {
 					break
@@ -368,14 +368,14 @@ func (d *Discovery) getCacheReCheckInstances() (retInstanceList []ecs_pop.Instan
 	retInstanceList = []ecs_pop.Instance{}
 	pageCount := 0
 	instanceIdList := []string{}
-	for tgLabelSetIndex, tgLabelSet := range d.tgCache.Targets  {
+	for tgLabelSetIndex, tgLabelSet := range d.tgCache.Targets {
 		instanceId := tgLabelSet[ecsLabelInstanceId]
 
-		pageCount ++
+		pageCount++
 		instanceIdList = append(instanceIdList, string(instanceId))
 
 		// full of one page, or last one of LabelSet Series.
-		if pageCount >= MAX_PAGE_LIMIT || tgLabelSetIndex == (len(d.tgCache.Targets) - 1) {
+		if pageCount >= MAX_PAGE_LIMIT || tgLabelSetIndex == (len(d.tgCache.Targets)-1) {
 
 			// query instances
 			describeInstancesRequest := ecs_pop.CreateDescribeInstancesRequest()
@@ -424,30 +424,27 @@ func (d *Discovery) queryFromListTagResources() (instances []ecs_pop.Instance, e
 	var nextTokenInstances []ecs_pop.Instance
 	var getInstancesFromListTagResourcesErr error
 	currentTotalCount := 0
-	originalToken := "INIT"
 	for {
-		if nextToken != "" && nextToken != "ICM=" && originalToken != nextToken {
-			nextToken, nextTokenInstances, getInstancesFromListTagResourcesErr = d.getInstancesFromListTagResources(nextToken, currentTotalCount)
-
-			originalToken = nextToken
-			if len(nextTokenInstances) == 0 {
-				break
-			}
-
-			currentTotalCount = currentTotalCount + len(nextTokenInstances)
-			if getInstancesFromListTagResourcesErr != nil {
-				return nil, getInstancesFromListTagResourcesErr
-			}
-			instances = mergeInstances(instances, nextTokenInstances)
-		} else {
+		if nextToken == "" || nextToken == "ICM=" {
 			break
 		}
+
+		nextToken, nextTokenInstances, getInstancesFromListTagResourcesErr = d.getInstancesFromListTagResources(nextToken, currentTotalCount)
+		if len(nextTokenInstances) == 0 {
+			break
+		}
+
+		currentTotalCount = currentTotalCount + len(nextTokenInstances)
+		if getInstancesFromListTagResourcesErr != nil {
+			return nil, getInstancesFromListTagResourcesErr
+		}
+		instances = mergeInstances(instances, nextTokenInstances)
 	}
 	return instances, nil
 }
 
 func mergeInstances(instances []ecs_pop.Instance, instances2 []ecs_pop.Instance) []ecs_pop.Instance {
-	for _, each := range instances2{
+	for _, each := range instances2 {
 		instances = append(instances, each)
 	}
 	return instances
@@ -456,10 +453,10 @@ func mergeInstances(instances []ecs_pop.Instance, instances2 []ecs_pop.Instance)
 // hash by instanceId and merge. O(n + m)
 func mergeHashInstances(instances []ecs_pop.Instance, instances2 []ecs_pop.Instance) []ecs_pop.Instance {
 	instanceId_instance := make(map[string]ecs_pop.Instance)
-	for _, each := range instances{
+	for _, each := range instances {
 		instanceId_instance[each.InstanceId] = each
 	}
-	for _, each := range instances2{
+	for _, each := range instances2 {
 		instanceId_instance[each.InstanceId] = each
 	}
 
@@ -518,7 +515,6 @@ func (d *Discovery) getInstancesFromListTagResources(token string, currentTotalC
 	} else {
 		instances = describeInstancesResponse.Instances.Instance
 	}
-
 
 	return nextToken, instances, nil
 }
